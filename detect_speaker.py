@@ -16,7 +16,8 @@ N_CLUSTERS = 8
 BATCH_SIZE = 32
 UPSAMPLE = 1
 FRAME_START = 400
-FRAME_END = 1300
+FRAME_END = 600
+FORMAT = '%-20s: %s'
 
 def isDir(path):
     mode = os.stat(path)[ST_MODE]
@@ -42,7 +43,8 @@ def extractFaces(frame_paths):
             curr_frame_path = frame_paths[curr_frame_number]
             curr_frame = frame_batch[frame_number_in_batch]
 
-            print("%-20s %-6d %-3d" % (curr_frame_path, curr_frame_number, len(curr_locations)))
+            m = ('%-20s %-6d %-3d' % (curr_frame_path, curr_frame_number, len(curr_locations)))
+            print(FORMAT % ('proc_frame', m))
 
             if len(curr_locations) == 0:
                 continue
@@ -60,7 +62,9 @@ def extractFaces(frame_paths):
     return (face_encodings, enc_to_loc)
 
 
-def detectSpeaker(face_encodings, enc_to_loc, vid_name):
+def detectSpeaker(frame_paths, face_encodings, enc_to_loc, vid_name):
+    print(FORMAT % ('cluster_inp', len(face_encodings)))
+
     enc_arr = np.asanyarray(face_encodings)
     k_means = KMeans(n_clusters=N_CLUSTERS).fit(enc_arr)
     preds = k_means.predict(enc_arr)
@@ -73,10 +77,18 @@ def detectSpeaker(face_encodings, enc_to_loc, vid_name):
     top, right, bottom, left = face_loc['loc']
     frame_number = face_loc['frame']
 
-    im = cv2.imread(frame_paths[frame_number])
+    speaker_frame_path = frame_paths[frame_number]
+    speaker_cluster_center = k_means.cluster_centers_[largest_cluster, :]
+    speaker_cluster_size = dists[:, largest_cluster].shape[0]
+
+    print(FORMAT % ('speaker_clsize', '%d' % (speaker_cluster_size)))
+    print(FORMAT % ('speaker', '%s -> (%d, %d, %d, %d)' % \
+            (speaker_frame_path, top, right, bottom, left)))
+
+    im = cv2.imread(speaker_frame_path)
     cv2.rectangle(im, (left, top), (right, bottom), (0, 255, 0), 3)
     cv2.imwrite(vid_name + '.jpg', im)
-    np.save(vid_name + '.npy', k_means.cluster_centers_[largest_cluster, :])
+    np.save(vid_name + '.npy', speaker_cluster_center)
 
     return closest_to_center
 
@@ -91,15 +103,21 @@ def clipPaths(paths):
 
     return sorted_paths[FRAME_START:FRAME_END]
 
-for path in sys.argv[1:]:
-    if not isDir(path):
-        continue
+sep = ''.join(['='] * 70)
 
-    tic = time.time()
-    print('====== Working on: ' + path + ' =========')
-    frame_paths = clipPaths(glob.glob(path + '/*'))
-    face_encodings, enc_to_loc = extractFaces(frame_paths)
-    vid_name = re.sub(r'^.+\/', '', path)
-    face_idx = detectSpeaker(face_encodings, enc_to_loc, vid_name)
-    toc = time.time()
-    print('====== Done: ' + '%.5f'%(toc-tic) + ' =========')
+def handlePaths(paths):
+    for path in paths:
+        if not isDir(path):
+            continue
+
+        tic = time.time()
+        print(FORMAT % ('start_path', path))
+        frame_paths = clipPaths(glob.glob(path + '/*'))
+        face_encodings, enc_to_loc = extractFaces(frame_paths)
+        vid_name = re.sub(r'^.+\/', '', path)
+        face_idx = detectSpeaker(frame_paths, face_encodings, enc_to_loc, vid_name)
+        toc = time.time()
+        print(FORMAT % ('duration', '%.5f s' % (toc-tic)))
+        print(FORMAT % ('done', sep))
+
+handlePaths(sys.argv[1:])
