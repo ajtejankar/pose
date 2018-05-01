@@ -1,7 +1,9 @@
 from datetime import datetime
+import traceback
 import numpy as np
 import face_recognition as fr
 import glob
+import datetime
 import os
 from stat import *
 from scipy.spatial.distance import cdist
@@ -66,6 +68,9 @@ def extractFaces(frame_paths):
 def detectSpeaker(frame_paths, face_encodings, enc_to_loc, vid_name):
     print(FORMAT % ('cluster_inp', len(face_encodings)))
 
+    if len(face_encodings) < N_CLUSTERS:
+        return
+
     enc_arr = np.asanyarray(face_encodings)
     k_means = KMeans(n_clusters=N_CLUSTERS).fit(enc_arr)
     preds = k_means.predict(enc_arr)
@@ -126,7 +131,9 @@ def handlePaths(paths):
 class Logger(object):
     def __init__(self):
         self.terminal = sys.stdout
-        fname = datetime.now().strftime('detect_speaker_log__%H_%M___%d_%m_%Y.log')
+        dt = str(datetime.datetime.now().date())
+        tm = str(datetime.datetime.now().time())
+        fname = 'detect_speaker_' + dt + '_' + tm.replace(':', '.') + '.log'
         self.log = open(fname, "a")  # specify file name here
 
     def write(self, message):
@@ -140,16 +147,19 @@ class Logger(object):
         pass
 
 sys.stdout = Logger()
+sys.stderr = sys.stdout
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
-        print('Incorrect usage. Needs GPU device id and paths to process')
+    if len(sys.argv) < 2:
+        print('Incorrect usage. Needs paths to speaker frames directories.')
         sys.exit(1)
 
-    device = int(sys.argv[1])
-    paths = sys.argv[2:]
-    dlib.cuda.set_device(device)
+    paths = sys.argv[1:]
     print(FORMAT % ('all_devices', str(dlib.cuda.get_num_devices())))
     print(FORMAT % ('gpu_device', str(dlib.cuda.get_device())))
 
-    handlePaths(paths)
+    try:
+        handlePaths(paths)
+    except Exception as e:
+        print(FORMAT % ('error', traceback.format_exc()))
+
