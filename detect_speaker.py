@@ -1,3 +1,4 @@
+from datetime import datetime
 import numpy as np
 import face_recognition as fr
 import glob
@@ -16,7 +17,7 @@ N_CLUSTERS = 8
 BATCH_SIZE = 32
 UPSAMPLE = 1
 FRAME_START = 400
-FRAME_END = 600
+FRAME_END = 1300
 FORMAT = '%-20s: %s'
 
 def isDir(path):
@@ -120,4 +121,35 @@ def handlePaths(paths):
         print(FORMAT % ('duration', '%.5f s' % (toc-tic)))
         print(FORMAT % ('done', sep))
 
-handlePaths(sys.argv[1:])
+
+# Logger to give output to console as well as a file simultaneously.
+class Logger(object):
+    def __init__(self):
+        self.terminal = sys.stdout
+        fname = datetime.now().strftime('detect_speaker_log__%H_%M___%d_%m_%Y.log')
+        self.log = open(fname, "a")  # specify file name here
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        #this flush method is needed for python 3 compatibility.
+        #this handles the flush command by doing nothing.
+        #you might want to specify some extra behavior here.
+        pass
+
+sys.stdout = Logger()
+
+if __name__ == '__main__':
+    if len(sys.argv) < 3:
+        print('Incorrect usage. Needs GPU device id and paths to process')
+        sys.exit(1)
+
+    device = int(sys.argv[1])
+    paths = sys.argv[2:]
+    dlib.cuda.set_device(device)
+    print(FORMAT % ('all_devices', str(dlib.cuda.get_num_devices())))
+    print(FORMAT % ('gpu_device', str(dlib.cuda.get_device())))
+
+    handlePaths(paths)
