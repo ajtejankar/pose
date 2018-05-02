@@ -8,6 +8,9 @@ FORMAT = '%-20s: %s'
 
 parser = ap.ArgumentParser('Generate parallelized bash scripts')
 
+parser.add_argument('script_name',
+        help='the script for which to generate bash file')
+
 parser.add_argument('vid_paths',
         help='a file containig list of paths to speaker frames directory')
 
@@ -30,7 +33,7 @@ devices = args.devices
 batch_size = len(paths) // len(devices)
 start = 0
 script_dir = os.path.dirname(os.path.realpath(__file__))
-detect_speaker_py = script_dir + '/' + 'detect_speaker.py'
+script_py = script_dir + '/' + args.script_name
 
 print(FORMAT % ('paths', str(len(paths))))
 print(FORMAT % ('devices', len(devices)))
@@ -48,7 +51,7 @@ for device in devices:
     batch_paths = paths[start:start+batch_size]
     batch_paths = ' '.join(batch_paths)
     cmd = 'CUDA_VISIBLE_DEVICES=%d python %s %s &' % \
-            (device, detect_speaker_py, batch_paths)
+            (device, script_py, batch_paths)
 
     print(''.join(['='] * 50))
     print(cmd)

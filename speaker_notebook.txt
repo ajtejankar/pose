@@ -1,0 +1,288 @@
+Jupyter Notebook speaker Last Checkpoint: Last Thursday at 12:23 PM (unsaved changes) Python 3
+Python 3
+File
+Edit
+View
+Insert
+Cell
+Kernel
+Widgets
+Help
+
+
+import numpy as np
+import face_recognition as fr
+import glob
+import os
+from stat import *
+from scipy.spatial.distance import cdist
+from sklearn.cluster import KMeans
+import cv2
+import matplotlib.pyplot as plt
+import time
+import sys
+import re
+import dlib
+import json
+
+def isDir(path):
+    mode = os.stat(path)[ST_MODE]
+    return S_ISDIR(mode)
+
+N_CLUSTERS = 8
+BATCH_SIZE = 32
+UPSAMPLE = 1
+
+def getFrameInfo(frame_paths, speaker_enc):
+    n = len(frame_paths)
+    frame_batch = []
+    frame_info = {}
+​
+    for frame_counter in range(n):
+        frame = fr.load_image_file(frame_paths[frame_counter])
+        frame_batch.append(frame)
+​
+        if frame_counter != n - 1 and len(frame_batch) != BATCH_SIZE:
+            continue
+​
+        loc_batch = fr.batch_face_locations(frame_batch, number_of_times_to_upsample=UPSAMPLE)
+​
+        for frame_number_in_batch, curr_locations in enumerate(loc_batch):
+            curr_frame_number = frame_counter + 1 - len(frame_batch) + frame_number_in_batch
+            curr_frame_path = frame_paths[curr_frame_number]
+            curr_frame = frame_batch[frame_number_in_batch]
+​
+            print("%-20s %-6d %-3d" % (curr_frame_path, curr_frame_number, len(curr_locations)))
+​
+            if len(curr_locations) == 0:
+                continue
+​
+            curr_encodings = fr.face_encodings(curr_frame, known_face_locations=curr_locations)
+            res = fr.compare_faces(curr_encodings, speaker_enc)
+
+            for k in range(len(curr_encodings)):
+                enc = curr_encodings[k]
+                loc = curr_locations[k]
+                curr_frame_name = '/'.join(curr_frame_path.split('/')[-2:])
+                frame_info[curr_frame_name] = {}
+
+                if res[k] == True:
+                    top, right, bottom, left = curr_locations[k]
+                    frame_info[curr_frame_name]['top'] = top
+                    frame_info[curr_frame_name]['right'] = right
+                    frame_info[curr_frame_name]['bottom'] = bottom
+                    frame_info[curr_frame_name]['left'] = left
+​
+​
+        frame_batch = []
+​
+    return frame_info
+
+def sortPaths(paths):
+    pat = re.compile(r'([0-9]+)\.jpg$')
+    sorted_paths = ['' for i in range(len(paths))]
+​
+    for path in paths:
+        m = pat.search(path)
+        num = int(m.group(1))
+        sorted_paths[num-1] = path
+​
+    return sorted_paths[400:]
+
+for path in glob.glob('../sample_vids/*.npy'):
+    tic = time.time()
+    print('====== Working on: ' + path + ' =========')
+    vid_path = path.replace('.npy', '')
+    frame_paths = sortPaths(glob.glob(vid_path + '/*'))
+    vid_name = re.sub(r'^.+\/', '', vid_path)
+    speaker_enc = np.load(path)
+    frame_info = getFrameInfo(frame_paths, speaker_enc)
+
+    with open(vid_path + '.json', 'w') as outfile:
+        json.dump(frame_info, outfile)
+
+    toc = time.time()
+    print('====== Done: ' + '%.5f'%(toc-tic) + ' =========')
+
+with open(glob.glob('../sample_vids/BobStein*.json')[0], 'r') as inp:
+    info = json.load(inp)
+
+x = {}
+
+x.has_key('loc')
+
+info.has_key('BobStein_2017S-480p/004092.jpg')
+
+len(info)
+
+frame_paths = sortPaths(glob.glob('../sample_vids/BobStein*/*'))
+speaker_frame_count = 0
+​
+for path in frame_paths:
+    key = '/'.join(path.split('/')[-2:])
+
+    if not info.has_key(key) or len(info[key].keys()) == 0:
+        print(key)
+        out_path = 'bob_stein/' + path.split('/')[-1]
+        im = cv2.imread(path)
+        cv2.imwrite(out_path, im[:, :, 2])
+    else:
+        loc = info[key]
+        im = cv2.imread(path)
+        top = loc['top']
+        right = loc['right']
+        bottom = loc['bottom']
+        left = loc['left']
+        cv2.rectangle(im, (left, top), (right, bottom), (0, 255, 0), 3)
+        out_path = 'bob_stein/' + path.split('/')[-1]
+        print(out_path)
+        cv2.imwrite(out_path, im)
+        speaker_frame_count += 1
+​
+print("total: %d, frames with speaker: %d" % (len(frame_paths), speaker_frame_count))
+
+def filterfaceframes(frame_paths, speaker_dict):
+    temp_paths = []
+    final_paths = []
+
+    for path in frame_paths:
+        if speaker_dict.has_key(path) and len(speaker_dict[path].keys()) > 0:
+            temp_paths.append(path)
+        else:
+            print(path)
+            if len(temp_paths) >= 150:
+                final_paths += temp_paths
+            temp_paths = []
+
+    if len(temp_paths) > 0 and len(temp_paths) >= 150:
+        final_paths += temp_paths
+
+    return final_paths
+
+frame_paths = sortPaths(glob.glob('../sample_vids/BobStein*/*'))
+key_paths = ['/'.join(path.split('/')[-2:]) for path in frame_paths]
+
+final_paths = min5sec(key_paths, info)
+
+final_paths
+
+for path in sorted(glob.glob('../sample_vids/*.json')):
+        inp = open(path)
+        # load json into dictionary
+        #info = json.load(inp)
+        print(path)
+
+path
+
+temp = ''.join(path.split('/')[-1:])
+
+temp
+
+path.split('/')[-1]
+
+vid_path = path.replace('.json','')
+print(vid_path)
+
+sorted(glob.glob('../sample_vids/*.json'))
+
+for i,path in enumerate(sorted(glob.glob('/nfs1/code/aniruddha/sample_vids/*.json'))):
+    if i==3:
+        inp = open(path)
+        print('====== Working on: ' + path + ' =========')
+        tic = time.time()
+        # load json into dictionary
+        info = json.load(inp)
+        # get the path for frames
+        vid_path = path.replace('.json','')
+        frame_paths = sortPaths(glob.glob(vid_path + '/*'))
+​
+        # modify the path so that it matches the dictionary key format
+        key_paths = ['/'.join(path.split('/')[-2:]) for path in frame_paths]
+​
+​
+        # frames where speaker is detected
+        print('====== Filtering face frames =======')
+        speaker_face_detected_paths = filterfaceframes(key_paths, info)
+​
+        # add prefix
+        prefix = '/'.join(path.split('/')[1:5])
+        speaker_face_detected_paths = [os.path.join(prefix,path) for path in speaker_face_detected_paths]
+
+speaker_face_detected_paths
+
+'/'.join(path.split('/')[:5])
+
+im = cv2.imread('/nfs1/code/aniruddha/sample_vids/BobStein_2017S-480p/000401.jpg')
+
+im
+
+im.shape
+
+inp = open('/nfs1/code/aniruddha/sample_vids/speakerupperbodyframesjson/AnabJain_2017-480p_speakerupperbodyframes.json','r')
+​
+# load json into dictionary
+info = json.load(inp)
+​
+inp.close()
+
+len(info)
+
+info
+
+info = [s.encode('utf-8') for s in info]
+
+# for all speaker_upper_body detected frames, extract int frame numbers:
+framenumber_list = []
+for i,text in enumerate(info):
+    framenumber = text.split('/')[-1]
+    framenumber = framenumber.replace('.jpg','')
+    framenumber = int(framenumber)
+    framenumber_list.append(framenumber)
+
+sequence_length = 30*5   # we are considering 10 second sequences
+sequence_start_frame = []
+k = 0
+i = 0
+while i < len(framenumber_list):
+    if (i+sequence_length) >= len(framenumber_list):
+        break
+    if framenumber_list[i+sequence_length] <= (framenumber_list[i] + 1.05*sequence_length): # 10% slack allowed
+        sequence_start_frame.append(info[i])
+        i = i + sequence_length + 1
+    else:
+        i = i + 1
+
+
+sequence_start_frame
+
+newdirpath = '/nfs1/code/aniruddha/sample_vids/AnabJain_2017-480p_pose_only_frames'
+if not os.path.exists(newdirpath):
+    os.makedirs(newdirpath)
+
+for i,json_path in enumerate(sorted(glob.glob('/nfs1/code/aniruddha/sample_vids/*.json'))):
+    if i == 0:
+        vid_path = json_path.replace('.json','')
+        print vid_path
+        #print(vid_path + '/speakerfaceframesjson/' + vid_path.split('/')[-1] + '_speakerfaceframes.json')
+        vid_path = json_path.replace('.json','')
+        image_paths = sorted(glob.glob(vid_path + '/*'))[400:]
+        print(image_paths)
+
+image_paths
+
+'/'.join(vid_path.split('/')[:-1]) + '/speakerupperbodyframesjson/' + vid_path.split('/')[-1] + '_speakerupperbodyframes.json'
+
+for i,json_path in enumerate(sorted(glob.glob('/nfs1/code/aniruddha/sample_vids/*.json'))):
+    print json_path
+
+#json_path = '/nfs1/code/aniruddha/sample_vids/speakerupperbodyframesjson/AnabJain_2017-480p_speakerupperbodyframes.json'
+json_path = '/nfs1/code/aniruddha/sample_vids/sequencestartframesjson/'
+inp = open(json_path, 'r')
+​
+# load json into dictionary
+info = json.load(inp)
+inp.close()
+
+len(info)
+
+​
