@@ -14,7 +14,7 @@ import dlib
 BATCH_SIZE = 32
 UPSAMPLE = 1
 FORMAT = '%-20s: %s'
-SPEAKERS_DIR = '/nfs1/code/ajinkya/pose/speakers'
+SPEAKERS_DIR = '/nfs1/shared/for_aniruddha/pose/speakers'
 
 def isDir(path):
     mode = os.stat(path)[ST_MODE]
@@ -41,7 +41,7 @@ class Logger(object):
         pass
 
 
-def detectSpeakerFace(frame_paths, speaker_face_encoding):
+def detectSpeakerFace(frame_paths, speaker_enc):
     n = len(frame_paths)
     frame_batch = []
     speaker_bb = {}
@@ -96,7 +96,7 @@ def handlePaths(paths):
 
         tic = time.time()
         print(FORMAT % ('start_path', path))
-        frame_paths = clipPaths(glob.glob(path + '/*'))
+        frame_paths = sorted(glob.glob(path + '/*'))
         vid_name = path.split('/')[-1]
         speaker_enc_path = os.path.join(SPEAKERS_DIR, vid_name + '.npy')
 
@@ -119,7 +119,7 @@ sys.stderr = sys.stdout
 sep = ''.join(['='] * 70)
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 2:
         print('Incorrect usage. Needs paths to video frames to process.')
         sys.exit(1)
 
