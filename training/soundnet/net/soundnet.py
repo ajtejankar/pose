@@ -58,11 +58,11 @@ class Model(nn.Module):
 #         self.conv8_scns = nn.Conv1d(1024, 401,  8, stride=2)
 #         print("Conv82", self.conv8_scns.weight.shape, self.conv8_scns.bias.shape)
 
-        self.conv8      = nn.Conv1d(1024, 256, 8)
-        print("Conv8", self.conv8.weight.shape, self.conv8.bias.shape)
-#         self.batchnorm8 = nn.BatchNorm1d(256)
-#         print("Bn8", self.batchnorm8.weight.shape, self.batchnorm8.bias.shape)
-        self.relu8      = nn.ReLU(True)
+#         self.conv8      = nn.Conv1d(1024, 256, 8)
+#         print("Conv8", self.conv8.weight.shape, self.conv8.bias.shape)
+# #         self.batchnorm8 = nn.BatchNorm1d(256)
+# #         print("Bn8", self.batchnorm8.weight.shape, self.batchnorm8.bias.shape)
+#         self.relu8      = nn.ReLU(True)
 
 
     def forward(self, waveform):
@@ -120,10 +120,10 @@ class Model(nn.Module):
 
 #         return (nn.Softmax(dim=1)(p_objs), nn.Softmax(dim=1)(p_scns))
 
-        out = self.conv8(out)
-        #out = self.batchnorm8(out)
-        out = self.relu8(out)
-        print("Size after layer 8: ", out.size())
+        # out = self.conv8(out)
+        # #out = self.batchnorm8(out)
+        # out = self.relu8(out)
+        # print("Size after layer 8: ", out.size())
 
         return out
 

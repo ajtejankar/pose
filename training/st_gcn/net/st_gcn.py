@@ -168,7 +168,7 @@ class Model(nn.Module):
         # x = F.avg_pool1d(x, x.size()[2:])
         # x = x.view(N, self.num_class)
 
-        return x.view(N,-1)
+        return x.view(N,-1)                 # Modified by Aniruddha: return 256 length embedding (batchsize * 256)
 
 
 class TCN_GCN_unit(nn.Module):
