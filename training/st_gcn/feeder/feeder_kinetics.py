@@ -12,6 +12,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torchvision import datasets, transforms
+import torchaudio
 
 # visualization
 import time
@@ -89,9 +90,11 @@ class Feeder_kinetics(torch.utils.data.Dataset):
         # output data shape (N, C, T, V, M)
         self.N = len(self.sample_name)  #sample
         self.C = 3  #channel
-        self.T = 300  #frame
+        self.T = 150  #frame      - change Aniruddha
         self.V = 18  #joint
         self.M = self.num_person_out  #person
+
+        self.AUDIO_LENGTH = 44100*5             # audio sampling rate of 44100 Hz
 
     def __len__(self):
         return len(self.sample_name)
@@ -130,6 +133,14 @@ class Feeder_kinetics(torch.utils.data.Dataset):
         label = video_info['label_index']
         assert (self.label[index] == label)
 
+        # fill audio_numpy          -- by Aniruddha
+        audio_numpy = np.zeros((self.AUDIO_LENGTH))           # 44100 audio sampling rate
+
+        temp_audio,_ = torchaudio.load(video_info['audio'])
+
+        audio_numpy = temp_audio[:self.AUDIO_LENGTH]            # clip because ffmpeg returns slightly longer sequences
+
+
         # data augmentation
         if self.random_shift:
             data_numpy = tools.random_shift(data_numpy)
@@ -151,7 +162,7 @@ class Feeder_kinetics(torch.utils.data.Dataset):
         if self.pose_matching:
             data_numpy = tools.openpose_match(data_numpy)
 
-        return data_numpy, label
+        return data_numpy, audio_numpy, label
 
     def top_k(self, score, top_k):
         assert (all(self.label >= 0))
@@ -238,8 +249,8 @@ def import_class(name):
 
 
 if __name__ == '__main__':
-    data_path = './data/kinetics-skeleton/kinetics_val'
-    label_path = './data/kinetics-skeleton/kinetics_val_label.json'
+    data_path = '../../data/kinetics-skeleton/kinetics_val'
+    label_path = '../../data/kinetics-skeleton/kinetics_val_label.json'
     graph = 'st_gcn.graph.Kinetics'
     # test(data_path, label_path, vid='iqkx0rrCUCo', graph=graph)
     test(data_path, label_path, vid=11111, graph=graph)

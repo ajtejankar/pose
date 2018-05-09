@@ -76,6 +76,7 @@ class Feeder(torch.utils.data.Dataset):
 
         # load data
         self.data = np.load(self.data_path)
+        self.data_audio = np.load(self.data_audio_path)
 
         if self.debug:
             self.label = self.label[0:100]
@@ -102,6 +103,7 @@ class Feeder(torch.utils.data.Dataset):
     def __getitem__(self, index):
         # get data
         data_numpy = self.data[index]
+        audio_numpy = self.data_audio[index]
         label = self.label[index]
 
         # normalization
@@ -118,7 +120,7 @@ class Feeder(torch.utils.data.Dataset):
         if self.random_move:
             data_numpy = tools.random_move(data_numpy)
 
-        return data_numpy, label
+        return data_numpy, audio_numpy, label
 
     def top_k(self, score, top_k):
         rank = score.argsort()
