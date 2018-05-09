@@ -164,12 +164,27 @@ class Feeder_kinetics(torch.utils.data.Dataset):
 
         return data_numpy, audio_numpy, label
 
-    def top_k(self, score, top_k):
+    # def top_k(self, score, top_k):
+    #     assert (all(self.label >= 0))
+
+    #     rank = score.argsort()
+    #     hit_top_k = [l in rank[i, -top_k:] for i, l in enumerate(self.label)]
+    #     return sum(hit_top_k) * 1.0 / len(hit_top_k)
+
+    def accuracy(self, score, margin):
         assert (all(self.label >= 0))
 
-        rank = score.argsort()
-        hit_top_k = [l in rank[i, -top_k:] for i, l in enumerate(self.label)]
+        hit = [False]*score.size(0)
+        #rank = score.argsort()
+        for i,l in enumerate(self.label):
+            if score[i]<0.5 and self.label==-1:
+                hit[i] = True
+            if score[i]>=0.5 and self.label==1:
+                hit[i] = True
+
         return sum(hit_top_k) * 1.0 / len(hit_top_k)
+
+
 
 
 def test(data_path, label_path, vid=None, graph=None):

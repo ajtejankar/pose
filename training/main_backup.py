@@ -11,6 +11,10 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
 
+# tensorboard
+from logger import Logger
+
+
 def get_parser():
 
     # parameter priority: command line > config > default
@@ -77,6 +81,10 @@ def get_parser():
         default=dict(),
         help='the arguments of data loader for training')
     parser.add_argument(
+        '--val-feeder-args',
+        default=dict(),
+        help='the arguments of data loader for validation')
+    parser.add_argument(
         '--test-feeder-args',
         default=dict(),
         help='the arguments of data loader for test')
@@ -119,6 +127,8 @@ def get_parser():
         '--nesterov', type=str2bool, default=False, help='use nesterov or not')
     parser.add_argument(
         '--batch-size', type=int, default=256, help='training batch size')
+    parser.add_argument(
+        '--val-batch-size', type=int, default=256, help='val batch size')
     parser.add_argument(
         '--test-batch-size', type=int, default=256, help='test batch size')
     parser.add_argument(
@@ -172,6 +182,9 @@ class Processor():
 
         self.load_loss()
 
+        #define TensorBoard logger
+        self.logger = Logger("/nfs1/code/aniruddha/pose/tensorboard/")
+
     def load_data(self):
         Feeder = import_class(self.arg.feeder)
         self.data_loader = dict()
@@ -181,11 +194,16 @@ class Processor():
                 batch_size=self.arg.batch_size,
                 shuffle=True,
                 num_workers=self.arg.num_worker)
-        self.data_loader['test'] = torch.utils.data.DataLoader(
-            dataset=Feeder(**self.arg.test_feeder_args),
-            batch_size=self.arg.test_batch_size,
+        self.data_loader['val'] = torch.utils.data.DataLoader(
+            dataset=Feeder(**self.arg.val_feeder_args),
+            batch_size=self.arg.val_batch_size,
             shuffle=False,
             num_workers=self.arg.num_worker)
+        # self.data_loader['test'] = torch.utils.data.DataLoader(
+        #     dataset=Feeder(**self.arg.test_feeder_args),
+        #     batch_size=self.arg.test_batch_size,
+        #     shuffle=False,
+        #     num_workers=self.arg.num_worker)
 
     def load_model(self):
         output_device = self.arg.device[
@@ -292,29 +310,38 @@ class Processor():
     #     else:
     #         raise ValueError()
 
-    def add_loss(self):
+    def add_loss(self):                             # Aniruddha
         output_device = self.arg.device[
             0] if type(self.arg.device) is list else self.arg.device
         self.output_device = output_device
-        self.loss = nn.CosineEmbeddingLoss().cuda(output_device)
+        self.loss = nn.CosineEmbeddingLoss(margin=0.5).cuda(output_device)
 
-    def add_finetuning_layers(self):
-        self.finetune_conv1 = nn.Conv1d(1024, 512, 1, stride=1)
-        self.finetune_relu1 = nn.ReLU(True)
+    def add_finetuning_layers(self):                # Aniruddha
 
-        self.finetune_conv2 = nn.Conv1d(512, 256, 8)
-        self.finetune_relu2 = nn.ReLU(True)
+        self.finetune_model = nn.Sequential(
 
-        self.finetune_conv1.cuda(self.output_device)
-        self.finetune_relu1.cuda(self.output_device)
-        self.finetune_conv2.cuda(self.output_device)
-        self.finetune_relu2.cuda(self.output_device)
+                nn.Conv1d(1024, 512, 1, stride=1)
+                nn.ReLU(True)
 
-    def add_optimizer_finetuning(self):
-        self.finetune_optimizer = optim.SGD([
-                {'params': self.finetune_conv1},
-                {'params': self.finetune_conv2}
-            ], lr=0.1, momentum=0.9, weight_decay=0.001)
+                nn.Conv1d(512, 256, 8)
+                nn.ReLU(True)
+            )
+
+        self.finetune_model.cuda(self.output_device)
+
+        # self.finetune_conv1 = nn.Conv1d(1024, 512, 1, stride=1)
+        # self.finetune_relu1 = nn.ReLU(True)
+
+        # self.finetune_conv2 = nn.Conv1d(512, 256, 8)
+        # self.finetune_relu2 = nn.ReLU(True)
+
+        # self.finetune_conv1.cuda(self.output_device)
+        # self.finetune_relu1.cuda(self.output_device)
+        # self.finetune_conv2.cuda(self.output_device)
+        # self.finetune_relu2.cuda(self.output_device)
+
+    def add_optimizer_finetuning(self):               # Aniruddha
+        self.finetune_optimizer = optim.SGD(self.finetune_model.parameters(), lr=0.1, momentum=0.9, weight_decay=0.001)
 
     def save_arg(self):
         # save arg
@@ -357,8 +384,12 @@ class Processor():
         return split_time
 
     def train(self, epoch, save_model=False):
-        self.model.train()
-        self.model_soundnet.train()
+
+        # SoundNet and ST-GCN used as fixed feature extractors - weights freezed, finetune model trains
+        self.model.eval()
+        self.model_soundnet.eval()
+        self.finetune_model.train()
+
         self.print_log('Training epoch: {}'.format(epoch + 1))
         loader = self.data_loader['train']
         lr = self.adjust_learning_rate(epoch)
@@ -366,23 +397,34 @@ class Processor():
 
         self.record_time()
         timer = dict(dataloader=0.001, model=0.001, statistics=0.001)
-        for batch_idx, (data, label) in enumerate(loader):
+        for batch_idx, (posedata, audiodata, label) in enumerate(loader):
+
+            # if using Cosine Embedding Loss change 0 to -1 in label
+            label[label == 0] = -1
 
             # get data
-            data = Variable(
-                data.float().cuda(self.output_device), requires_grad=False)
+            posedata = Variable(
+                posedata.float().cuda(self.output_device), requires_grad=False)
+            audiodata = Variable(
+                posedata.float().cuda(self.output_device), requires_grad=False)
             label = Variable(
                 label.long().cuda(self.output_device), requires_grad=False)
             timer['dataloader'] += self.split_time()
 
+
+
             # forward
-            output = self.model(data)
-            loss = self.loss(output, label)
+            output_pose = self.model(posedata)
+            output_audio = self.model_soundnet(audiodata)
+
+            output_audio = self.finetune_model(output_audio)
+
+            loss = self.loss(output_pose, output_audio, label)
 
             # backward
-            self.optimizer.zero_grad()
+            self.finetune_optimizer.zero_grad()
             loss.backward()
-            self.optimizer.step()
+            self.finetune_optimizer.step()
             loss_value.append(loss.data[0])
             timer['model'] += self.split_time()
 
@@ -395,31 +437,20 @@ class Processor():
                 #============ TensorBoard logging ============#
                 # (1) Log the scalar values
                 info = {
-                    'alexnet_loss': losses.avg,
-                    'siamese_loss': losses_siamese.avg,
-                    'train prec@1': top1.avg,
-                    'train prec@5': top5.avg,
-                    'alexnet_optimizerLR': optimizer_alex.param_groups[0]['lr'],
-                    'siamese_optimizerLR': optimizer_siamese.param_groups[0]['lr']
+                    'loss': loss_value,
+
+                    'finetune_optimizer_LR': self.finetune_optimizer.param_groups[0]['lr']
                 }
 
                 for tag, value in info.items():
-                    logger.scalar_summary(tag, value, counter)
+                    self.logger.scalar_summary(tag, value, counter)
 
                 # (2) Log values and gradients of the parameters (histogram)
-                for tag, value in model.named_parameters():
+                for tag, value in self.finetune_model.named_parameters():
                     tag = tag.replace('.', '/')
-                    logger.histo_summary(tag, to_np(value), counter)
-                    logger.histo_summary(tag+'/grad', to_np(value.grad), counter)
+                    self.logger.histo_summary(tag, to_np(value), counter)
+                    self.logger.histo_summary(tag+'/grad', to_np(value.grad), counter)
 
-                # (3) Log the images
-                info = {
-                    'images_siamese1': to_np(input1_var.view(-1, 3, 224, 224)[:1]),
-                    'images_siamese2': to_np(input2_var.view(-1, 3, 224, 224)[:1])
-                }
-
-                for tag, images in info.items():
-                    logger.image_summary(tag, images, counter)
             timer['statistics'] += self.split_time()
 
         # statistics of time consumption and loss
@@ -441,33 +472,59 @@ class Processor():
                                     v.cpu()] for k, v in state_dict.items()])
             torch.save(weights, model_path)
 
-    def eval(self, epoch, save_score=False, loader_name=['test']):
+    def eval(self, epoch, save_score=False, loader_name=['val']):
+        # SoundNet and ST-GCN used as fixed feature extractors - weights freezed, finetune model evaluates
         self.model.eval()
+        self.model_soundnet.eval()
+        self.finetune_model.eval()
+
         self.print_log('Eval epoch: {}'.format(epoch + 1))
         for ln in loader_name:
             loss_value = []
             score_frag = []
-            for batch_idx, (data, label) in enumerate(self.data_loader[ln]):
-                data = Variable(
-                    data.float().cuda(self.output_device),
+            for batch_idx, (posedata, audiodata, label) in enumerate(self.data_loader[ln]):
+
+                # if using Cosine Embedding Loss change 0 to -1 in label
+                label[label == 0] = -1
+
+                posedata = Variable(
+                    posedata.float().cuda(self.output_device),
                     requires_grad=False,
                     volatile=True)
+
+                audiodata = Variable(
+                    audiodata.float().cuda(self.output_device),
+                    requires_grad=False,
+                    volatile=True)
+
                 label = Variable(
                     label.long().cuda(self.output_device),
                     requires_grad=False,
                     volatile=True)
-                output = self.model(data)
-                loss = self.loss(output, label)
-                score_frag.append(output.data.cpu().numpy())
-                loss_value.append(loss.data[0])
-            score = np.concatenate(score_frag)
-            score_dict = dict(
-                zip(self.data_loader[ln].dataset.sample_name, score))
+                # forward
+                output_pose = self.model(posedata)
+                output_audio = self.model_soundnet(audiodata)
+
+                output_audio = self.finetune_model(output_audio)
+
+                loss = self.loss(output_pose, output_audio, label, reduce=False)        # don't reduce during evaluation
+
+
+
+                score_frag.append(loss.data.cpu().numpy())
+                loss_value.append(torch.mean(loss.data[0]))
+            #score = np.concatenate(score_frag)
+            # score_dict = dict(
+            #     zip(self.data_loader[ln].dataset.sample_name, score))
             self.print_log('\tMean {} loss of {} batches: {}.'.format(
                 ln, len(self.data_loader[ln]), np.mean(loss_value)))
-            for k in self.arg.show_topk:
-                self.print_log('\tTop{}: {:.2f}%'.format(
-                    k, 100 * self.data_loader[ln].dataset.top_k(score, k)))
+            # for k in self.arg.show_topk:
+            #     self.print_log('\tTop{}: {:.2f}%'.format(
+            #         k, 100 * self.data_loader[ln].dataset.top_k(score, k)))
+
+
+            self.print_log('\tTop{}: {:.2f}%'.format(
+                    k, 100 * self.data_loader[ln].dataset.accuracy(score, margin=0.5)))
 
             if save_score:
                 with open('{}/epoch{}_{}_score.pkl'.format(
@@ -489,18 +546,18 @@ class Processor():
                     self.eval(
                         epoch,
                         save_score=self.arg.save_score,
-                        loader_name=['test'])
+                        loader_name=['val'])
                 else:
                     pass
 
-        elif self.arg.phase == 'test':
+        elif self.arg.phase == 'val':
             if self.arg.weights is None:
                 raise ValueError('Please appoint --weights.')
             self.arg.print_log = False
             self.print_log('Model:   {}.'.format(self.arg.model))
             self.print_log('Weights: {}.'.format(self.arg.weights))
             self.eval(
-                epoch=0, save_score=self.arg.save_score, loader_name=['test'])
+                epoch=0, save_score=self.arg.save_score, loader_name=['val'])
             self.print_log('Done.\n')
 
 
