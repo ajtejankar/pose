@@ -10,8 +10,9 @@ import time
 import sys
 import re
 import dlib
+import json
 
-BATCH_SIZE = 32
+BATCH_SIZE = 36
 UPSAMPLE = 1
 FORMAT = '%-20s: %s'
 SPEAKERS_DIR = '/nfs1/shared/for_aniruddha/pose/speakers'
@@ -27,7 +28,7 @@ class Logger(object):
         self.terminal = sys.stdout
         dt = str(datetime.datetime.now().date())
         tm = str(datetime.datetime.now().time())
-        fname = 'detect_speaker_' + dt + '_' + tm.replace(':', '.') + '.log'
+        fname = 'speaker_bb_' + dt + '_' + tm.replace(':', '.') + '.log'
         self.log = open(fname, "a")  # specify file name here
 
     def write(self, message):
@@ -94,11 +95,22 @@ def handlePaths(paths):
         if not isDir(path):
             continue
 
+        vid_name = path.split('/')[-1]
+
+        if os.path.exists(vid_name + '.json'):
+            print(FORMAT % ('skip_path', path))
+            continue
+
         tic = time.time()
         print(FORMAT % ('start_path', path))
         frame_paths = sorted(glob.glob(path + '/*'))
-        vid_name = path.split('/')[-1]
-        speaker_enc_path = os.path.join(SPEAKERS_DIR, vid_name + '.npy')
+
+        if '480p_' not in path:
+            speaker_npy = vid_name
+        else:
+            speaker_npy = '_'.join(vid_name.split('_')[:-1])
+
+        speaker_enc_path = os.path.join(SPEAKERS_DIR, speaker_npy + '.npy')
 
         if not os.path.exists(speaker_enc_path):
             continue

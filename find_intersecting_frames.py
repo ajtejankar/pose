@@ -1,4 +1,6 @@
 from datetime import datetime
+import math
+import json
 import traceback
 import numpy as np
 import face_recognition as fr
@@ -10,10 +12,17 @@ import time
 import sys
 import re
 import dlib
+from multiprocessing import Pool
 
+
+NUM_WORKERS = 8
 FORMAT = '%-20s: %s'
 BB_DIR = '/nfs1/shared/for_aniruddha/pose/bb'
-KEYPOINTS_DIR = '/nfs1/shared/for_aniruddha/pose/keypoints'
+KEYPOINTS_ROOT = '/nfs1/shared/for_aniruddha/pose/keypoints'
+FRAMES_ROOT = '/nfs2/datasets/TED/frames'
+VID_SEQ_ROOT = '/nfs1/shared/for_aniruddha/pose/vid_seq'
+SEQ_LEN = 5
+FRAME_RATE = 30
 
 
 def isDir(path):
@@ -27,7 +36,7 @@ class Logger(object):
         self.terminal = sys.stdout
         dt = str(datetime.datetime.now().date())
         tm = str(datetime.datetime.now().time())
-        fname = 'detect_speaker_' + dt + '_' + tm.replace(':', '.') + '.log'
+        fname = 'intersection_' + dt + '_' + tm.replace(':', '.') + '.log'
         self.log = open(fname, "a")  # specify file name here
 
     def write(self, message):
@@ -41,38 +50,142 @@ class Logger(object):
         pass
 
 
-def main():
-    for bb_file_path in glob.glob(BB_DIR + '/*'):
-        if isDir(bb_file_path):
-            continue
+def find_seq(frames):
+    seq = []
+    i = 0
+    # print(FORMAT % ('person_frames', len(frames)))
 
-    for path in paths:
-        if not isDir(path):
-            continue
+    if len(frames) == 0:
+        return []
 
-        tic = time.time()
-        print(FORMAT % ('start_path', path))
-        frame_paths = sorted(glob.glob(path + '/*'))
-        vid_name = path.split('/')[-1]
-        speaker_enc_path = os.path.join(SPEAKERS_DIR, vid_name + '.npy')
+    while i < len(frames):
+        start_frame_num = int(frames[i].split('/')[-1].replace('.jpg', ''))
+        start_sec = start_frame_num // FRAME_RATE
 
-        if not os.path.exists(speaker_enc_path):
-            continue
+        if (i + SEQ_LEN) >= len(frames):
+            break
 
-        speaker_enc = np.load(speaker_enc_path)
-        speaker_bb = detectSpeakerFace(frame_paths, speaker_enc)
+        end_frame_num = int(frames[i + SEQ_LEN].split('/')[-1].replace('.jpg', ''))
+        end_sec =  end_frame_num // FRAME_RATE
+        # print(FORMAT % ('clip_seconds', '%d --> %d' % (start_sec, end_sec)))
         
-        with open(vid_name + '.json', 'w') as outfile:
-            json.dump(speaker_bb, outfile)
+        if (end_sec - start_sec) == SEQ_LEN:
+            print(FORMAT % ('seq_found', '[ %d --> %d ]' % (start_sec, end_sec)))
+            vid_name = frames[i].split('/')[-2]
+            a = start_sec * FRAME_RATE
+            b = end_sec * FRAME_RATE
+            seq.append(['%s/%06d.jpg' % (vid_name, j+1) for j in range(a, b)])
+            i += SEQ_LEN
+        else:
+            i += 1
 
-        toc = time.time()
-        print(FORMAT % ('duration', '%.5f s' % (toc-tic)))
-        print(FORMAT % ('done', sep))
+    print(FORMAT % ('total_seq', '%-60s %d' % (frames[0].split('/')[-2], len(seq))))
+
+    return seq
 
 
+def in_box(bb, pt):
+    top = bb['top']
+    right = bb['right']
+    bottom = bb['bottom']
+    left = bb['left']
+
+    if (left <= pt[0] <= right) and (top <= pt[1] <= bottom):
+        return True
+
+    return False
+
+
+def do_intersect(kp, bb):
+    # check if face bb contains the face keypoints (ears and nose)
+    if in_box(bb, (kp[0*3+0], kp[0*3+1])) or \
+        in_box(bb, (kp[14*3+0], kp[14*3+1])) or \
+        in_box(bb, (kp[15*3+0], kp[15*3+1])):
+
+        # check if right or left is detected
+        if kp[8*3+2] != 0 or kp[11*3+2] != 0:
+            return True
+    
+    return False
+
+
+def handle_path(person_bb_fpath):
+    if isDir(person_bb_fpath):
+        return
+
+    try:
+        print(FORMAT % ('read_bb_json', person_bb_fpath))
+        with open(person_bb_fpath, 'r') as inp:
+            person_bb_dict = json.load(inp)
+    except:
+        print(FORMAT % ('json_load_fail', person_bb_fpath))
+        return
+
+    no_kp_file = False
+    person_frames = []
+
+    for frame_bb_key in sorted(person_bb_dict.keys()):
+        frame_kp_fpath = os.path.join(KEYPOINTS_ROOT, 
+                frame_bb_key).replace('.jpg', '_keypoints.json')
+
+        person_bb = person_bb_dict[frame_bb_key]
+        # print(FORMAT % ('kp_file_path', frame_kp_fpath))
+
+        if not os.path.exists(frame_kp_fpath):
+            no_kp_file = True
+            break
+
+        # print(FORMAT % ('read_keypoints', frame_kp_fpath))
+        with open(frame_kp_fpath, 'r') as kpf:
+            frame_kp_dict = json.load(kpf)
+
+        intersect = False
+        for person in frame_kp_dict['people']:
+            person_kp = person['pose_keypoints_2d']
+
+            if do_intersect(person_kp, person_bb):
+                intersect = True
+                break
+
+        if intersect == True:
+            # print(FORMAT % ('intersection', frame_bb_key))
+            person_frames.append(frame_bb_key)
+
+    if no_kp_file == True:
+        print(FORMAT % ('no_kp_file', person_bb_fpath))
+        return
+
+    seq_counter = 0
+
+    for seq in find_seq(person_frames):
+        vid_name = seq[0].split('/')[-2]
+        seq_name = '%s_%04d' % (vid_name, seq_counter)
+        seq_dir_path = os.path.join(VID_SEQ_ROOT, seq_name)
+
+        if os.path.exists(seq_dir_path):
+            print(FORMAT % ('seq_exists', seq_dir_path))
+            seq_counter += 1
+            continue
+
+        print(FORMAT % ('create_seq', seq_dir_path))
+        os.makedirs(seq_dir_path)
+
+        for frame in seq:
+            frame_name = frame.split('/')[-1]
+            frame_path = os.path.join(FRAMES_ROOT, frame)
+            seq_frame_path = os.path.join(seq_dir_path, frame_name)
+            # print(FORMAT % ('create_link', '%s --> %s' % (frame_path, seq_frame_path)))
+            os.symlink(frame_path, seq_frame_path)
+
+        seq_counter += 1
+
+    print(sep)
+
+
+sep = ''.join(['='] * 70)
 sys.stdout = Logger()
 sys.stderr = sys.stdout
-sep = ''.join(['='] * 70)
-
-if __name__ == '__main__':
-    main()
+pool = Pool(NUM_WORKERS)
+pool.map(handle_path, sorted(glob.glob(BB_DIR + '/*.json')))
+pool.close()
+pool.join()

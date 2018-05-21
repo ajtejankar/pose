@@ -1,5 +1,6 @@
 speakers
 cand_frame_links
 *.log
+logs
 bb
 keypoints
