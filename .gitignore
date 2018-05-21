@@ -4,3 +4,6 @@ cand_frame_links
 logs
 bb
 keypoints
+.npy
+.pkl
+.pt
